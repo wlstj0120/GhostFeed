@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, StatusBar } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { analyzePost, getAntiKeywords, loadHistory, clearHistory } from '../api/ghostApi';
+import { analyzePost, loadHistory, clearHistory } from '../api/ghostApi';
 import * as Linking from 'expo-linking';
 
 export default function HomeScreen({ navigation }) {
@@ -54,7 +54,6 @@ export default function HomeScreen({ navigation }) {
     setLoading(true);
     try {
       await analyzePost(url);
-      await getAntiKeywords();
       loadHistory().then(setHistory);
       navigation.navigate('파괴');
     } catch (e) {
@@ -65,11 +64,10 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleClearHistory = () => {
-  setHistory([]);
-  clearHistory();
-  try { localStorage.removeItem('history'); } catch {}
-};
-
+    setHistory([]);
+    clearHistory();
+    try { localStorage.removeItem('history'); } catch {}
+  };
 
   const formatDate = (iso) => {
     const d = new Date(iso);
