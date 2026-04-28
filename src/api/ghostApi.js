@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ghostApi.js 상단 수정
-const BASE_URL = 'http://18.222.183.193:8000'; // 슬래시 개수와 위치를 꼭 확인하세요!
+const BASE_URL = 'http://52.15.235.222:8000'; // 슬래시 개수와 위치를 꼭 확인하세요!
 
 const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
