@@ -92,23 +92,27 @@ export default function DestroyScreen() {
   };
 
   const handleRefresh = () => {
-    if (isFetching.current) return;
-    isFetching.current = true;
-    setLoading(true);
-    setKeywords([]);
-    getAntiKeywords()
-      .then(data => {
-        if (data.keywords && data.keywords.length > 0) {
-          setKeywords(data.keywords);
-        }
-        setLoading(false);
-        isFetching.current = false;
-      })
-      .catch(() => {
-        setLoading(false);
-        isFetching.current = false;
-      });
-  };
+  if (isFetching.current) return;
+  isFetching.current = true;
+  setLoading(true);
+
+  // 현재 영상들의 videoId 수집해서 제외 요청
+  const currentIds = keywords.map(k => k.videoId);
+
+  setKeywords([]);
+  getAntiKeywords(currentIds)
+    .then(data => {
+      if (data.keywords && data.keywords.length > 0) {
+        setKeywords(data.keywords);
+      }
+      setLoading(false);
+      isFetching.current = false;
+    })
+    .catch(() => {
+      setLoading(false);
+      isFetching.current = false;
+    });
+};
 
   const watchedCount = Object.values(watched).filter(Boolean).length;
   const progress = Math.min(watchedCount / goal, 1);

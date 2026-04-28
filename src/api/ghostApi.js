@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const BASE_URL = 'http://localhost:8000';
 const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
-// 고유 userId 생성 및 저장
 export const getUserId = async () => {
   try {
     let userId = await AsyncStorage.getItem('userId');
@@ -27,7 +26,6 @@ export const getUserId = async () => {
   }
 };
 
-// localhost:8081/ 앞에 붙는 문제 자동 제거
 export const cleanUrl = (rawUrl) => {
   try {
     if (rawUrl.includes('localhost:8081/http')) {
@@ -40,7 +38,6 @@ export const cleanUrl = (rawUrl) => {
   }
 };
 
-// 게시물 분석 요청
 export const analyzePost = async (url) => {
   const cleanedUrl = cleanUrl(url);
   const userId = await getUserId();
@@ -49,21 +46,28 @@ export const analyzePost = async (url) => {
   return data;
 };
 
-// 반대 키워드 요청
-export const getAntiKeywords = async () => {
+export const selectCategories = async (categories) => {
   const userId = await getUserId();
-  const { data } = await api.get(`/anti-keywords/${userId}`);
+  const { data } = await api.post('/select-categories', {
+    categories,
+    user_id: userId
+  });
   return data;
 };
 
-// 주간 리포트
+export const getAntiKeywords = async (excludeIds = []) => {
+  const userId = await getUserId();
+  const excludeParam = excludeIds.length > 0 ? `?exclude=${excludeIds.join(',')}` : '';
+  const { data } = await api.get(`/anti-keywords/${userId}${excludeParam}`);
+  return data;
+};
+
 export const getWeeklyReport = async () => {
   const userId = await getUserId();
   const { data } = await api.get(`/report/${userId}`);
   return data;
 };
 
-// 히스토리 저장
 export const saveHistory = async (url) => {
   try {
     const existing = await AsyncStorage.getItem('history');
@@ -82,7 +86,6 @@ export const saveHistory = async (url) => {
   }
 };
 
-// 히스토리 불러오기
 export const loadHistory = async () => {
   try {
     const existing = await AsyncStorage.getItem('history');
@@ -95,7 +98,6 @@ export const loadHistory = async () => {
   return [];
 };
 
-// 히스토리 삭제
 export const clearHistory = async () => {
   try {
     await AsyncStorage.removeItem('history');
@@ -105,7 +107,6 @@ export const clearHistory = async () => {
   } catch {}
 };
 
-// 데이터 초기화
 export const resetUserData = async () => {
   const userId = await getUserId();
   await api.delete(`/reset/${userId}`);

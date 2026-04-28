@@ -124,53 +124,38 @@ def calculate_bias_score(vectors):
         return 0
     if len(vectors) < 3:
         return 10
-
     centroid = np.mean(vectors, axis=0)
     scores = np.array([
         cosine_similarity([centroid], [cat_vec])[0][0]
         for cat_vec in category_embeddings.values()
     ])
-
-    # 정규화
     scores_normalized = (scores - scores.min()) / (scores.max() - scores.min() + 1e-9)
-
-    # 지니 계수 방식
     sorted_scores = np.sort(scores_normalized)
     n = len(sorted_scores)
     gini = (2 * np.sum((np.arange(1, n+1)) * sorted_scores) - (n + 1) * np.sum(sorted_scores)) / (n * np.sum(sorted_scores) + 1e-9)
-
-    # 0~85 스케일
     bias = round(float(gini) * 85)
     return min(85, max(0, bias))
 
 def compute_anti_keywords(vectors, used_keywords):
     if not vectors:
         return random.sample(KEYWORD_POOL, 5)
-
     centroid = np.mean(vectors, axis=0)
-
     cat_similarities = {}
     for cat, cat_vec in category_embeddings.items():
         sim = cosine_similarity([centroid], [cat_vec])[0][0]
         cat_similarities[cat] = sim
-
     top_cats = sorted(cat_similarities, key=cat_similarities.get, reverse=True)[:2]
     bottom_cats = sorted(cat_similarities, key=cat_similarities.get)[:3]
-
     print(f"많이 본 카테고리: {top_cats}")
     print(f"추천 카테고리: {bottom_cats}")
-
     candidate_keywords = []
     for cat in bottom_cats:
         candidate_keywords.extend(category_keywords.get(cat, []))
-
     if not candidate_keywords:
         candidate_keywords = KEYWORD_POOL
-
     candidate_keywords = [kw for kw in candidate_keywords if kw not in used_keywords]
     if not candidate_keywords:
         candidate_keywords = KEYWORD_POOL
-
     selected = random.sample(candidate_keywords, min(5, len(candidate_keywords)))
     return selected
 
@@ -178,15 +163,13 @@ def get_category_scores(vectors):
     if not vectors:
         return []
     centroid = np.mean(vectors, axis=0)
-    scores = []
     all_sims = [cosine_similarity([centroid], [cat_vec])[0][0]
                 for cat_vec in category_embeddings.values()]
     min_sim = min(all_sims)
     max_sim = max(all_sims)
-
+    scores = []
     for cat, cat_vec in category_embeddings.items():
         sim = cosine_similarity([centroid], [cat_vec])[0][0]
-        # 정규화해서 퍼센트로 변환
         if max_sim - min_sim > 0:
             percent = round((sim - min_sim) / (max_sim - min_sim) * 100)
         else:
@@ -198,6 +181,10 @@ class PostRequest(BaseModel):
     url: str
     user_id: str = "user_default"
 
+class CategoryRequest(BaseModel):
+    categories: list
+    user_id: str = "user_default"
+
 @app.get("/")
 def root():
     return {"message": "Ghost Feed API 실행 중"}
@@ -207,31 +194,24 @@ def analyze(body: PostRequest):
     text = get_youtube_text(body.url)
     if not text:
         text = get_page_text(body.url)
-
     print(f"[{body.user_id}] 분석 텍스트: {text[:80]}")
-
     vector = model.encode([text])[0]
     data = load_data(body.user_id)
     data["vectors"].append(vector.tolist())
-
     if "analyzed_texts" not in data:
         data["analyzed_texts"] = []
     data["analyzed_texts"].append({"url": body.url, "text": text[:100]})
-
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
     data["vectors"] = data["vectors"][-100:]
     data["history"] = data["history"][-50:]
     data["analyzed_texts"] = data["analyzed_texts"][-50:]
-
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
-
     save_data(data, body.user_id)
-
     return {
         "status": "ok",
         "text": text[:100],
@@ -239,12 +219,39 @@ def analyze(body: PostRequest):
         "anti_keywords": new_keywords
     }
 
+@app.post("/select-categories")
+def select_categories(body: CategoryRequest):
+    vectors = []
+    for cat in body.categories:
+        if cat in category_embeddings:
+            for _ in range(3):
+                vectors.append(category_embeddings[cat].tolist())
+    if not vectors:
+        return {"status": "error", "message": "유효한 카테고리 없음"}
+    data = load_data(body.user_id)
+    data["vectors"].extend(vectors)
+    data["vectors"] = data["vectors"][-100:]
+    score = calculate_bias_score(data["vectors"])
+    data["history"].append(score)
+    used_keywords = data.get("used_keywords", [])
+    new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
+    data["last_anti_keywords"] = new_keywords
+    used_keywords.extend(new_keywords)
+    data["used_keywords"] = used_keywords[-20:]
+    save_data(data, body.user_id)
+    return {
+        "status": "ok",
+        "message": "카테고리 선택 완료!",
+        "anti_keywords": new_keywords
+    }
+
 @app.get("/anti-keywords/{user_id}")
-def get_anti_keywords(user_id: str):
+def get_anti_keywords(user_id: str, exclude: str = ""):
     data = load_data(user_id)
     vectors = data["vectors"]
     used_keywords = data.get("used_keywords", [])
     last_keywords = data.get("last_anti_keywords", [])
+    exclude_ids = set(exclude.split(",")) if exclude else set()
 
     if last_keywords:
         selected = last_keywords
@@ -262,14 +269,19 @@ def get_anti_keywords(user_id: str):
             res = youtube.search().list(
                 q=keyword,
                 part='snippet',
-                maxResults=5,
+                maxResults=10,
                 type='video',
                 relevanceLanguage='ko',
                 order='relevance'
             ).execute()
-
             if res['items']:
-                item = random.choice(res['items'])
+                available = [
+                    item for item in res['items']
+                    if item['id']['videoId'] not in exclude_ids
+                ]
+                if not available:
+                    available = res['items']
+                item = random.choice(available)
                 results.append({
                     "keyword": keyword,
                     "videoId": item['id']['videoId'],
@@ -287,7 +299,6 @@ def get_report(user_id: str):
     data = load_data(user_id)
     vectors = data["vectors"]
     history = data["history"]
-
     if not vectors:
         return {
             "biasScore": 0,
@@ -296,10 +307,8 @@ def get_report(user_id: str):
             "categories": [],
             "totalAnalyzed": 0
         }
-
     bias_score = calculate_bias_score(vectors)
     category_scores = get_category_scores(vectors)
-
     return {
         "biasScore": bias_score,
         "diversity": 100 - bias_score,
