@@ -19,10 +19,13 @@ import json
 import re
 import random
 
+# .env 파일 로드
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
 app = FastAPI()
+
+# CORS 설정: Netlify 등 외부에서 접속 가능하도록 허용
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,6 +67,7 @@ category_embeddings = {
 }
 
 def get_user_file(user_id: str):
+    # 파일명에 유효하지 않은 문자 제거
     safe_id = user_id.replace("/", "_").replace("\\", "_").replace(":", "_")
     return f"user_data_{safe_id}.json"
 
@@ -185,33 +189,44 @@ class CategoryRequest(BaseModel):
     categories: list
     user_id: str = "user_default"
 
+# --- API Endpoints ---
+
 @app.get("/")
 def root():
-    return {"message": "Ghost Feed API 실행 중"}
+    return {"message": "Ghost Feed API 실행 중", "status": "online"}
 
 @app.post("/analyze")
 def analyze(body: PostRequest):
     text = get_youtube_text(body.url)
     if not text:
         text = get_page_text(body.url)
+    
     print(f"[{body.user_id}] 분석 텍스트: {text[:80]}")
     vector = model.encode([text])[0]
+    
     data = load_data(body.user_id)
     data["vectors"].append(vector.tolist())
+    
     if "analyzed_texts" not in data:
         data["analyzed_texts"] = []
     data["analyzed_texts"].append({"url": body.url, "text": text[:100]})
+    
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
+    
     data["vectors"] = data["vectors"][-100:]
     data["history"] = data["history"][-50:]
     data["analyzed_texts"] = data["analyzed_texts"][-50:]
+    
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
+    
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
+    
     save_data(data, body.user_id)
+    
     return {
         "status": "ok",
         "text": text[:100],
@@ -226,19 +241,26 @@ def select_categories(body: CategoryRequest):
         if cat in category_embeddings:
             for _ in range(3):
                 vectors.append(category_embeddings[cat].tolist())
+    
     if not vectors:
         return {"status": "error", "message": "유효한 카테고리 없음"}
+    
     data = load_data(body.user_id)
     data["vectors"].extend(vectors)
     data["vectors"] = data["vectors"][-100:]
+    
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
+    
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
+    
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
+    
     save_data(data, body.user_id)
+    
     return {
         "status": "ok",
         "message": "카테고리 선택 완료!",
@@ -262,6 +284,9 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
         data["last_anti_keywords"] = selected
         save_data(data, user_id)
 
+    if not YOUTUBE_API_KEY:
+        return {"error": "API Key missing"}
+
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     results = []
     for keyword in selected:
@@ -274,6 +299,7 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
                 relevanceLanguage='ko',
                 order='relevance'
             ).execute()
+            
             if res['items']:
                 available = [
                     item for item in res['items']
@@ -290,7 +316,7 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
                     "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}"
                 })
         except Exception as e:
-            print(f"YouTube 검색 오류: {e}")
+            print(f"YouTube 검색 오류 ({keyword}): {e}")
 
     return {"keywords": results}
 
@@ -323,3 +349,9 @@ def reset_data(user_id: str):
     if os.path.exists(file):
         os.remove(file)
     return {"message": "데이터 초기화 완료"}
+
+# --- 서버 실행부 (AWS 외부 접속 허용) ---
+if __name__ == "__main__":
+    import uvicorn
+    # host="0.0.0.0"은 모든 IP로부터의 접속을 허용합니다.
+    uvicorn.run(app, host="0.0.0.0", port=8000)
