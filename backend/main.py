@@ -350,8 +350,8 @@ def reset_data(user_id: str):
         os.remove(file)
     return {"message": "데이터 초기화 완료"}
 
-# --- 서버 실행부 (AWS 외부 접속 허용) ---
 if __name__ == "__main__":
     import uvicorn
-    # host="0.0.0.0"은 모든 IP로부터의 접속을 허용합니다.
+    # host="0.0.0.0"이 있어야 외부 브라우저에서 접속이 가능합니다.
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

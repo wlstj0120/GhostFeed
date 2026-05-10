@@ -17,23 +17,32 @@
       "infoPlist": {
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["ghostfeed"]
+            "CFBundleURLSchemes": [
+              "ghostfeed"
+            ]
           }
         ]
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0a0a0f"
       },
       "intentFilters": [
         {
           "action": "android.intent.action.SEND",
-          "data": [{"mimeType": "text/plain"}],
-          "category": ["android.intent.category.DEFAULT"]
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ],
+          "category": [
+            "android.intent.category.DEFAULT"
+          ]
         }
-      ]
+      ],
+      "package": "com.ghostfeed.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,6 +50,11 @@
     "plugins": [
       "expo-sharing"
     ],
-    "scheme": "ghostfeed"
+    "scheme": "ghostfeed",
+    "extra": {
+      "eas": {
+        "projectId": "3a258b80-0a3e-49f8-a5de-8c8e41ed0dd4"
+      }
+    }
   }
 }
