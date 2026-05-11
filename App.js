@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import { Text } from 'react-native';
 import { useState, useEffect } from 'react';
 
 import HomeScreen from './src/screens/HomeScreen';
@@ -18,7 +18,7 @@ export default function App() {
     checkOnboarding().then(done => setOnboardingDone(done));
   }, []);
 
-  if (onboardingDone === null) return null; // 로딩 중
+  if (onboardingDone === null) return null;
 
   if (!onboardingDone) {
     return <OnboardingScreen onDone={() => setOnboardingDone(true)} />;
@@ -28,14 +28,14 @@ export default function App() {
     <NavigationContainer>
       <Tab.Navigator
         screenOptions={({ route }) => ({
-          tabBarIcon: ({ color, size }) => {
+          tabBarIcon: ({ color }) => {
             const icons = {
-              '홈': 'home',
-              '편향지도': 'map',
-              '파괴': 'nuclear',
-              '리포트': 'bar-chart',
+              '홈': '🏠',
+              '편향지도': '🗺️',
+              '파괴': '💥',
+              '리포트': '📊',
             };
-            return <Ionicons name={icons[route.name]} size={size} color={color} />;
+            return <Text style={{ fontSize: 20 }}>{icons[route.name]}</Text>;
           },
           tabBarActiveTintColor: '#ff3cac',
           tabBarInactiveTintColor: '#555',
