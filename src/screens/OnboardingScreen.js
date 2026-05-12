@@ -1,7 +1,5 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const ONBOARDING_KEY = 'onboarding_done';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 
 const steps = [
   {
@@ -31,17 +29,12 @@ const steps = [
 ];
 
 export default function OnboardingScreen({ onDone }) {
-  const [step, setStep] = React.useState(0);
+  const [step, setStep] = useState(0);
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
-      try {
-        await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      } catch {
-        try { localStorage.setItem(ONBOARDING_KEY, 'true'); } catch {}
-      }
       onDone();
     }
   };
@@ -51,7 +44,7 @@ export default function OnboardingScreen({ onDone }) {
   return (
     <View style={styles.container}>
       <View style={styles.skipRow}>
-        <TouchableOpacity onPress={handleNext}>
+        <TouchableOpacity onPress={onDone}>
           <Text style={styles.skip}>건너뛰기</Text>
         </TouchableOpacity>
       </View>
@@ -62,7 +55,6 @@ export default function OnboardingScreen({ onDone }) {
         <Text style={styles.desc}>{current.desc}</Text>
       </View>
 
-      {/* 진행 점 */}
       <View style={styles.dots}>
         {steps.map((_, i) => (
           <View
@@ -85,19 +77,9 @@ export default function OnboardingScreen({ onDone }) {
   );
 }
 
-import React from 'react';
-
 export const checkOnboarding = async () => {
-  try {
-    const done = await AsyncStorage.getItem(ONBOARDING_KEY);
-    return done === 'true';
-  } catch {
-    try {
-      return localStorage.getItem(ONBOARDING_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  }
+  // 항상 false 반환 → 매번 온보딩 보여줌
+  return false;
 };
 
 const styles = StyleSheet.create({
@@ -109,7 +91,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', marginBottom: 20, textAlign: 'center' },
   desc: { fontSize: 16, color: '#888', lineHeight: 26, textAlign: 'center' },
   dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 24 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#333', transition: 'all 0.3s' },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#333' },
   btn: { borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 40 },
   btnText: { color: '#fff', fontWeight: '800', fontSize: 17 },
 });

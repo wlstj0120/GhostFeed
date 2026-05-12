@@ -21,6 +21,8 @@ import random
 
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 
 app = FastAPI()
 
@@ -80,6 +82,12 @@ def save_data(data, user_id: str = "user_default"):
     with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
+def is_naver_news(url):
+    return 'news.naver.com' in url or 'n.news.naver.com' in url
+
+def is_youtube(url):
+    return 'youtube.com' in url or 'youtu.be' in url
+
 def extract_youtube_id(url):
     patterns = [
         r'(?:v=|\/)([0-9A-Za-z_-]{11})',
@@ -112,13 +120,52 @@ def get_youtube_text(url):
 def get_page_text(url):
     try:
         res = requests.get(url, timeout=5, verify=False,
-                          headers={'User-Agent': 'Mozilla/5.0'})
+                           headers={'User-Agent': 'Mozilla/5.0'})
         soup = BeautifulSoup(res.text, "html.parser")
         for tag in soup(['script', 'style', 'nav', 'footer']):
             tag.decompose()
         return soup.get_text(separator=' ', strip=True)[:500]
     except:
         return "분석 실패"
+
+def search_naver_news(keyword, display=1):
+    """네이버 뉴스 검색 API"""
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return []
+    try:
+        headers = {
+            'X-Naver-Client-Id': NAVER_CLIENT_ID,
+            'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+        }
+        params = {
+            'query': keyword,
+            'display': display,
+            'sort': 'date',
+        }
+        res = requests.get(
+            'https://openapi.naver.com/v1/search/news.json',
+            headers=headers,
+            params=params,
+            timeout=5
+        )
+        if res.status_code == 200:
+            items = res.json().get('items', [])
+            results = []
+            for item in items:
+                # HTML 태그 제거
+                title = re.sub(r'<[^>]+>', '', item.get('title', ''))
+                description = re.sub(r'<[^>]+>', '', item.get('description', ''))
+                results.append({
+                    'title': title,
+                    'description': description,
+                    'url': item.get('link', ''),
+                    'thumbnail': 'https://ssl.pstatic.net/static/newsstand/2021/images/newsstand_logo_naver.png',
+                    'source': item.get('originallink', ''),
+                })
+            return results
+    except Exception as e:
+        print(f"네이버 뉴스 검색 오류: {e}")
+    return []
 
 def calculate_bias_score(vectors):
     if not vectors:
@@ -192,32 +239,59 @@ def root():
 
 @app.post("/analyze")
 def analyze(body: PostRequest):
-    text = get_youtube_text(body.url)
-    if not text:
+    # URL 타입 감지
+    if is_youtube(body.url):
+        text = get_youtube_text(body.url)
+        if not text:
+            text = get_page_text(body.url)
+        source_type = "youtube"
+    elif is_naver_news(body.url):
         text = get_page_text(body.url)
-    print(f"[{body.user_id}] 분석 텍스트: {text[:80]}")
+        source_type = "naver_news"
+    else:
+        text = get_page_text(body.url)
+        source_type = "web"
+
+    if not text:
+        text = "분석 실패"
+
+    print(f"[{body.user_id}] [{source_type}] 분석 텍스트: {text[:80]}")
+
     vector = model.encode([text])[0]
     data = load_data(body.user_id)
     data["vectors"].append(vector.tolist())
+
     if "analyzed_texts" not in data:
         data["analyzed_texts"] = []
-    data["analyzed_texts"].append({"url": body.url, "text": text[:100]})
+    data["analyzed_texts"].append({
+        "url": body.url,
+        "text": text[:100],
+        "source_type": source_type
+    })
+
+    # 마지막 분석 소스 타입 저장
+    data["last_source_type"] = source_type
+
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
     data["vectors"] = data["vectors"][-100:]
     data["history"] = data["history"][-50:]
     data["analyzed_texts"] = data["analyzed_texts"][-50:]
+
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
+
     save_data(data, body.user_id)
+
     return {
         "status": "ok",
         "text": text[:100],
         "message": "분석 완료!",
-        "anti_keywords": new_keywords
+        "anti_keywords": new_keywords,
+        "source_type": source_type
     }
 
 @app.post("/select-categories")
@@ -252,48 +326,81 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
     vectors = data["vectors"]
     used_keywords = data.get("used_keywords", [])
     exclude_ids = set(exclude.split(",")) if exclude else set()
+    source_type = data.get("last_source_type", "youtube")
 
-    # 매번 새로 계산 (캐시 사용 안 함 → 새로고침마다 다른 영상)
     selected = compute_anti_keywords(vectors, used_keywords)
     used_keywords.extend(selected)
     data["used_keywords"] = used_keywords[-20:]
     data["last_anti_keywords"] = selected
     save_data(data, user_id)
 
-    if not YOUTUBE_API_KEY:
-        return {"error": "API Key missing"}
-
-    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     results = []
-    for keyword in selected:
-        try:
-            res = youtube.search().list(
-                q=keyword,
-                part='snippet',
-                maxResults=10,
-                type='video',
-                relevanceLanguage='ko',
-                order='relevance'
-            ).execute()
-            if res['items']:
-                available = [
-                    item for item in res['items']
-                    if item['id']['videoId'] not in exclude_ids
-                ]
-                if not available:
-                    available = res['items']
-                item = random.choice(available)
-                results.append({
-                    "keyword": keyword,
-                    "videoId": item['id']['videoId'],
-                    "title": item['snippet']['title'],
-                    "thumbnail": item['snippet']['thumbnails']['medium']['url'],
-                    "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}"
-                })
-        except Exception as e:
-            print(f"YouTube 검색 오류 ({keyword}): {e}")
 
-    return {"keywords": results}
+    # 네이버 뉴스로 분석했으면 네이버 뉴스 추천
+    if source_type == "naver_news" and NAVER_CLIENT_ID:
+        print("네이버 뉴스 추천 모드")
+        all_keywords = selected + [kw for kw in KEYWORD_POOL if kw not in selected]
+        for keyword in all_keywords:
+            if len(results) >= 5:
+                break
+            news_list = search_naver_news(keyword, display=3)
+            for news in news_list:
+                if len(results) >= 5:
+                    break
+                if news['url'] not in exclude_ids:
+                    results.append({
+                        "keyword": keyword,
+                        "videoId": news['url'],  # URL을 ID로 사용
+                        "title": news['title'],
+                        "thumbnail": news['thumbnail'],
+                        "url": news['url'],
+                        "type": "naver_news",
+                        "description": news['description']
+                    })
+    else:
+        # 유튜브 추천
+        print("유튜브 추천 모드")
+        if not YOUTUBE_API_KEY:
+            return {"error": "API Key missing"}
+
+        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+        all_keywords = selected + [kw for kw in KEYWORD_POOL if kw not in selected]
+
+        for keyword in all_keywords:
+            if len(results) >= 5:
+                break
+            try:
+                res = youtube.search().list(
+                    q=keyword,
+                    part='snippet',
+                    maxResults=10,
+                    type='video',
+                    relevanceLanguage='ko',
+                    order='relevance'
+                ).execute()
+
+                if res['items']:
+                    available = [
+                        item for item in res['items']
+                        if item['id']['videoId'] not in exclude_ids
+                        and item['id']['videoId'] not in [r['videoId'] for r in results]
+                    ]
+                    if not available:
+                        available = res['items']
+                    item = random.choice(available)
+                    results.append({
+                        "keyword": keyword,
+                        "videoId": item['id']['videoId'],
+                        "title": item['snippet']['title'],
+                        "thumbnail": item['snippet']['thumbnails']['medium']['url'],
+                        "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        "type": "youtube"
+                    })
+            except Exception as e:
+                print(f"YouTube 검색 오류 ({keyword}): {e}")
+                continue
+
+    return {"keywords": results, "source_type": source_type}
 
 @app.get("/report/{user_id}")
 def get_report(user_id: str):

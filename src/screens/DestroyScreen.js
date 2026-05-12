@@ -7,36 +7,45 @@ import { getAntiKeywords } from '../api/ghostApi';
 const GOAL_KEY = 'weekly_goal';
 const WATCHED_KEY = 'watched';
 
-export default function DestroyScreen() {
+export default function DestroyScreen({ route }) {
   const [keywords, setKeywords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [watched, setWatched] = useState({});
   const [goal, setGoal] = useState(3);
   const [modalVisible, setModalVisible] = useState(false);
   const [inputGoal, setInputGoal] = useState('3');
+  const [sourceType, setSourceType] = useState('youtube');
   const isFetching = useRef(false);
+  const lastRefresh = useRef(null);
 
   useFocusEffect(
     useCallback(() => {
       loadWatched();
       loadGoal();
-      if (keywords.length === 0 && !isFetching.current) {
-        isFetching.current = true;
-        setLoading(true);
-        getAntiKeywords()
-          .then(data => {
-            if (data.keywords && data.keywords.length > 0) {
-              setKeywords(data.keywords);
-            }
-            setLoading(false);
-            isFetching.current = false;
-          })
-          .catch(() => {
-            setLoading(false);
-            isFetching.current = false;
-          });
+      const refresh = route?.params?.refresh;
+      const shouldRefresh = refresh && refresh !== lastRefresh.current;
+      if (shouldRefresh || keywords.length === 0) {
+        if (shouldRefresh) lastRefresh.current = refresh;
+        if (!isFetching.current) {
+          isFetching.current = true;
+          setLoading(true);
+          setKeywords([]);
+          getAntiKeywords([])
+            .then(data => {
+              if (data.keywords && data.keywords.length > 0) {
+                setKeywords(data.keywords);
+              }
+              if (data.source_type) setSourceType(data.source_type);
+              setLoading(false);
+              isFetching.current = false;
+            })
+            .catch(() => {
+              setLoading(false);
+              isFetching.current = false;
+            });
+        }
       }
-    }, [keywords.length])
+    }, [route?.params?.refresh, keywords.length])
   );
 
   const loadWatched = async () => {
@@ -92,31 +101,31 @@ export default function DestroyScreen() {
   };
 
   const handleRefresh = () => {
-  if (isFetching.current) return;
-  isFetching.current = true;
-  setLoading(true);
-
-  // 현재 영상들의 videoId 수집해서 제외 요청
-  const currentIds = keywords.map(k => k.videoId);
-
-  setKeywords([]);
-  getAntiKeywords(currentIds)
-    .then(data => {
-      if (data.keywords && data.keywords.length > 0) {
-        setKeywords(data.keywords);
-      }
-      setLoading(false);
-      isFetching.current = false;
-    })
-    .catch(() => {
-      setLoading(false);
-      isFetching.current = false;
-    });
-};
+    if (isFetching.current) return;
+    isFetching.current = true;
+    setLoading(true);
+    const currentIds = keywords.map(k => k.videoId);
+    setKeywords([]);
+    getAntiKeywords(currentIds)
+      .then(data => {
+        if (data.keywords && data.keywords.length > 0) {
+          setKeywords(data.keywords);
+        }
+        if (data.source_type) setSourceType(data.source_type);
+        setLoading(false);
+        isFetching.current = false;
+      })
+      .catch(() => {
+        setLoading(false);
+        isFetching.current = false;
+      });
+  };
 
   const watchedCount = Object.values(watched).filter(Boolean).length;
   const progress = Math.min(watchedCount / goal, 1);
   const isGoalReached = watchedCount >= goal;
+
+  const isNaverNews = (item) => item.type === 'naver_news';
 
   if (loading) {
     return (
@@ -146,7 +155,9 @@ export default function DestroyScreen() {
             <View style={styles.titleRow}>
               <View>
                 <Text style={styles.title}>💥 알고리즘 파괴</Text>
-                <Text style={styles.sub}>당신이 평생 안 볼 것 같은 영상들</Text>
+                <Text style={styles.sub}>
+                  {sourceType === 'naver_news' ? '네이버 뉴스 추천' : '유튜브 영상 추천'}
+                </Text>
               </View>
               <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh}>
                 <Text style={styles.refreshText}>🔄 새로고침</Text>
@@ -183,34 +194,64 @@ export default function DestroyScreen() {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={[styles.card, watched[item.videoId] && styles.cardWatched]}>
-            <TouchableOpacity onPress={() => handleWatch(item)}>
-              <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
-              {watched[item.videoId] && (
-                <View style={styles.watchedOverlay}>
-                  <Text style={styles.watchedOverlayText}>✅ 시청 완료</Text>
+        renderItem={({ item }) => {
+          const isNaver = isNaverNews(item);
+          return (
+            <View style={[styles.card, watched[item.videoId] && styles.cardWatched]}>
+              <TouchableOpacity onPress={() => handleWatch(item)}>
+                {isNaver ? (
+                  // 네이버 뉴스 썸네일
+                  <View style={styles.naverThumb}>
+                    <Text style={styles.naverThumbIcon}>📰</Text>
+                    <View style={styles.naverBadge}>
+                      <Text style={styles.naverBadgeText}>NAVER 뉴스</Text>
+                    </View>
+                  </View>
+                ) : (
+                  // 유튜브 썸네일
+                  <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
+                )}
+                {watched[item.videoId] && (
+                  <View style={styles.watchedOverlay}>
+                    <Text style={styles.watchedOverlayText}>✅ 완료</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.cardBody}>
+                <View style={styles.topRow}>
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>#{item.keyword}</Text>
+                  </View>
+                  <View style={[styles.typeBadge, { backgroundColor: isNaver ? '#03c75a22' : '#ff000022' }]}>
+                    <Text style={[styles.typeBadgeText, { color: isNaver ? '#03c75a' : '#ff4444' }]}>
+                      {isNaver ? '📰 네이버' : '▶ YouTube'}
+                    </Text>
+                  </View>
                 </View>
-              )}
-            </TouchableOpacity>
-            <View style={styles.cardBody}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>#{item.keyword}</Text>
-              </View>
-              <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-              <View style={styles.cardFooter}>
-                <TouchableOpacity onPress={() => handleWatch(item)}>
-                  <Text style={styles.watchText}>▶ 유튜브에서 보기</Text>
-                </TouchableOpacity>
-                <View style={[styles.checkBtn, watched[item.videoId] && styles.checkBtnDone]}>
-                  <Text style={styles.checkBtnText}>
-                    {watched[item.videoId] ? '✅ 봤어요' : '👁 안봤어요'}
-                  </Text>
+
+                <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
+
+                {isNaver && item.description && (
+                  <Text style={styles.newsDesc} numberOfLines={2}>{item.description}</Text>
+                )}
+
+                <View style={styles.cardFooter}>
+                  <TouchableOpacity onPress={() => handleWatch(item)}>
+                    <Text style={[styles.watchText, { color: isNaver ? '#03c75a' : '#00f5c8' }]}>
+                      {isNaver ? '📰 네이버에서 보기' : '▶ 유튜브에서 보기'}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={[styles.checkBtn, watched[item.videoId] && styles.checkBtnDone]}>
+                    <Text style={styles.checkBtnText}>
+                      {watched[item.videoId] ? '✅ 봤어요' : '👁 안봤어요'}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
 
       <Modal
@@ -222,7 +263,7 @@ export default function DestroyScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>🎯 주간 목표 설정</Text>
-            <Text style={styles.modalSub}>이번 주 몇 개의 영상을 볼까요? (1~10)</Text>
+            <Text style={styles.modalSub}>이번 주 몇 개를 볼까요? (1~10)</Text>
             <TextInput
               style={styles.modalInput}
               value={inputGoal}
@@ -233,16 +274,10 @@ export default function DestroyScreen() {
               placeholderTextColor="#444"
             />
             <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setModalVisible(false)}
-              >
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setModalVisible(false)}>
                 <Text style={styles.modalCancelText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalSaveBtn}
-                onPress={() => saveGoal(inputGoal)}
-              >
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={() => saveGoal(inputGoal)}>
                 <Text style={styles.modalSaveText}>저장</Text>
               </TouchableOpacity>
             </View>
@@ -277,14 +312,22 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#111118', borderRadius: 14, marginBottom: 16, borderWidth: 0.5, borderColor: 'rgba(0,245,200,.2)', overflow: 'hidden' },
   cardWatched: { opacity: 0.6, borderColor: 'rgba(0,245,200,.5)' },
   thumbnail: { width: '100%', height: 180 },
+  naverThumb: { width: '100%', height: 120, backgroundColor: '#03c75a15', alignItems: 'center', justifyContent: 'center', borderBottomWidth: 0.5, borderBottomColor: '#03c75a33' },
+  naverThumbIcon: { fontSize: 40, marginBottom: 8 },
+  naverBadge: { backgroundColor: '#03c75a', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 4 },
+  naverBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   watchedOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   watchedOverlayText: { color: '#00f5c8', fontSize: 18, fontWeight: '700' },
   cardBody: { padding: 14 },
-  badge: { backgroundColor: 'rgba(255,60,172,.15)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 8 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  badge: { backgroundColor: 'rgba(255,60,172,.15)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 11, color: '#ff3cac', fontWeight: '600' },
-  videoTitle: { fontSize: 14, color: '#fff', fontWeight: '600', lineHeight: 20, marginBottom: 10 },
+  typeBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  typeBadgeText: { fontSize: 11, fontWeight: '600' },
+  videoTitle: { fontSize: 14, color: '#fff', fontWeight: '600', lineHeight: 20, marginBottom: 6 },
+  newsDesc: { fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 8 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  watchText: { fontSize: 12, color: '#00f5c8' },
+  watchText: { fontSize: 12 },
   checkBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 0.5, borderColor: '#333' },
   checkBtnDone: { backgroundColor: 'rgba(0,245,200,0.1)', borderColor: 'rgba(0,245,200,.4)' },
   checkBtnText: { fontSize: 11, color: '#aaa' },

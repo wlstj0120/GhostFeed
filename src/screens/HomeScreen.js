@@ -20,21 +20,16 @@ export default function HomeScreen({ navigation }) {
   const [history, setHistory] = useState([]);
   const [selectedCats, setSelectedCats] = useState([]);
   const [catLoading, setCatLoading] = useState(false);
-  const [mode, setMode] = useState('url'); // 'url' or 'category'
+  const [mode, setMode] = useState('url');
 
   useEffect(() => {
-    const subscription = Linking.addEventListener('url', ({ url: incomingUrl }) => {
-      const extracted = extractUrl(incomingUrl);
-      if (extracted) setUrl(extracted);
-    });
-    Linking.getInitialURL().then((initialUrl) => {
-      if (initialUrl) {
-        const extracted = extractUrl(initialUrl);
-        if (extracted) setUrl(extracted);
-      }
-    });
-    return () => subscription.remove();
-  }, []);
+  const subscription = Linking.addEventListener('url', ({ url: incomingUrl }) => {
+    const extracted = extractUrl(incomingUrl);
+    if (extracted) setUrl(extracted);
+  });
+  // getInitialURL 제거 → S3 URL 자동입력 방지
+  return () => subscription.remove();
+}, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -68,7 +63,7 @@ export default function HomeScreen({ navigation }) {
     try {
       await analyzePost(url);
       loadHistory().then(setHistory);
-      navigation.navigate('파괴');
+      navigation.navigate('파괴', { refresh: Date.now() });
     } catch (e) {
       Alert.alert('오류', '서버 연결 실패. 백엔드 서버가 실행 중인지 확인해주세요.');
     } finally {
@@ -92,7 +87,7 @@ export default function HomeScreen({ navigation }) {
     setCatLoading(true);
     try {
       await selectCategories(selectedCats);
-      navigation.navigate('파괴');
+      navigation.navigate('파괴', { refresh: Date.now() });
     } catch (e) {
       Alert.alert('오류', '서버 연결 실패. 백엔드 서버가 실행 중인지 확인해주세요.');
     } finally {
@@ -130,7 +125,6 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.tagline}>당신의 알고리즘 편향을 파괴하세요</Text>
       </View>
 
-      {/* 모드 전환 탭 */}
       <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tab, mode === 'url' && styles.tabActive]}
@@ -146,7 +140,6 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* URL 입력 모드 */}
       {mode === 'url' && (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>분석할 URL</Text>
@@ -177,7 +170,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 카테고리 선택 모드 */}
       {mode === 'category' && (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>평소에 주로 보는 콘텐츠를 선택하세요</Text>
@@ -223,7 +215,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 분석 히스토리 */}
       {history.length > 0 && mode === 'url' && (
         <View style={styles.historyBox}>
           <View style={styles.historyHeader}>
