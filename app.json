@@ -38,11 +38,13 @@
             }
           ],
           "category": [
-            "android.intent.category.DEFAULT"
+            "android.intent.category.DEFAULT",
+            "android.intent.category.BROWSABLE"
           ]
         }
       ],
-      "package": "com.ghostfeed.app"
+      "package": "com.ghostfeed.app",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
