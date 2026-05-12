@@ -19,13 +19,11 @@ import json
 import re
 import random
 
-# .env 파일 로드
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
 app = FastAPI()
 
-# CORS 설정: Netlify 등 외부에서 접속 가능하도록 허용
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,7 +65,6 @@ category_embeddings = {
 }
 
 def get_user_file(user_id: str):
-    # 파일명에 유효하지 않은 문자 제거
     safe_id = user_id.replace("/", "_").replace("\\", "_").replace(":", "_")
     return f"user_data_{safe_id}.json"
 
@@ -189,8 +186,6 @@ class CategoryRequest(BaseModel):
     categories: list
     user_id: str = "user_default"
 
-# --- API Endpoints ---
-
 @app.get("/")
 def root():
     return {"message": "Ghost Feed API 실행 중", "status": "online"}
@@ -200,33 +195,24 @@ def analyze(body: PostRequest):
     text = get_youtube_text(body.url)
     if not text:
         text = get_page_text(body.url)
-    
     print(f"[{body.user_id}] 분석 텍스트: {text[:80]}")
     vector = model.encode([text])[0]
-    
     data = load_data(body.user_id)
     data["vectors"].append(vector.tolist())
-    
     if "analyzed_texts" not in data:
         data["analyzed_texts"] = []
     data["analyzed_texts"].append({"url": body.url, "text": text[:100]})
-    
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
-    
     data["vectors"] = data["vectors"][-100:]
     data["history"] = data["history"][-50:]
     data["analyzed_texts"] = data["analyzed_texts"][-50:]
-    
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
-    
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
-    
     save_data(data, body.user_id)
-    
     return {
         "status": "ok",
         "text": text[:100],
@@ -241,26 +227,19 @@ def select_categories(body: CategoryRequest):
         if cat in category_embeddings:
             for _ in range(3):
                 vectors.append(category_embeddings[cat].tolist())
-    
     if not vectors:
         return {"status": "error", "message": "유효한 카테고리 없음"}
-    
     data = load_data(body.user_id)
     data["vectors"].extend(vectors)
     data["vectors"] = data["vectors"][-100:]
-    
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
-    
     used_keywords = data.get("used_keywords", [])
     new_keywords = compute_anti_keywords(data["vectors"], used_keywords)
     data["last_anti_keywords"] = new_keywords
-    
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
-    
     save_data(data, body.user_id)
-    
     return {
         "status": "ok",
         "message": "카테고리 선택 완료!",
@@ -272,17 +251,14 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
     data = load_data(user_id)
     vectors = data["vectors"]
     used_keywords = data.get("used_keywords", [])
-    last_keywords = data.get("last_anti_keywords", [])
     exclude_ids = set(exclude.split(",")) if exclude else set()
 
-    if last_keywords:
-        selected = last_keywords
-    else:
-        selected = compute_anti_keywords(vectors, used_keywords)
-        used_keywords.extend(selected)
-        data["used_keywords"] = used_keywords[-20:]
-        data["last_anti_keywords"] = selected
-        save_data(data, user_id)
+    # 매번 새로 계산 (캐시 사용 안 함 → 새로고침마다 다른 영상)
+    selected = compute_anti_keywords(vectors, used_keywords)
+    used_keywords.extend(selected)
+    data["used_keywords"] = used_keywords[-20:]
+    data["last_anti_keywords"] = selected
+    save_data(data, user_id)
 
     if not YOUTUBE_API_KEY:
         return {"error": "API Key missing"}
@@ -299,7 +275,6 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
                 relevanceLanguage='ko',
                 order='relevance'
             ).execute()
-            
             if res['items']:
                 available = [
                     item for item in res['items']
@@ -352,6 +327,4 @@ def reset_data(user_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    # host="0.0.0.0"이 있어야 외부 브라우저에서 접속이 가능합니다.
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
