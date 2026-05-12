@@ -125,7 +125,24 @@ export default function DestroyScreen({ route }) {
   const progress = Math.min(watchedCount / goal, 1);
   const isGoalReached = watchedCount >= goal;
 
-  const isNaverNews = (item) => item.type === 'naver_news';
+  const getTypeInfo = (type) => {
+    switch(type) {
+      case 'naver_blog':
+        return { icon: '📝', label: 'NAVER 블로그', color: '#03c75a', btnText: '📝 블로그에서 보기' };
+      case 'naver_news':
+        return { icon: '📰', label: 'NAVER 뉴스', color: '#03c75a', btnText: '📰 네이버에서 보기' };
+      default:
+        return { icon: '▶', label: 'YouTube', color: '#ff4444', btnText: '▶ 유튜브에서 보기' };
+    }
+  };
+
+  const getSubTitle = () => {
+    switch(sourceType) {
+      case 'naver_blog': return '네이버 블로그 추천';
+      case 'naver_news': return '네이버 뉴스 추천';
+      default: return '유튜브 영상 추천';
+    }
+  };
 
   if (loading) {
     return (
@@ -155,9 +172,7 @@ export default function DestroyScreen({ route }) {
             <View style={styles.titleRow}>
               <View>
                 <Text style={styles.title}>💥 알고리즘 파괴</Text>
-                <Text style={styles.sub}>
-                  {sourceType === 'naver_news' ? '네이버 뉴스 추천' : '유튜브 영상 추천'}
-                </Text>
+                <Text style={styles.sub}>{getSubTitle()}</Text>
               </View>
               <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh}>
                 <Text style={styles.refreshText}>🔄 새로고침</Text>
@@ -195,20 +210,19 @@ export default function DestroyScreen({ route }) {
           </View>
         }
         renderItem={({ item }) => {
-          const isNaver = isNaverNews(item);
+          const typeInfo = getTypeInfo(item.type);
+          const isNaver = item.type === 'naver_blog' || item.type === 'naver_news';
           return (
             <View style={[styles.card, watched[item.videoId] && styles.cardWatched]}>
               <TouchableOpacity onPress={() => handleWatch(item)}>
                 {isNaver ? (
-                  // 네이버 뉴스 썸네일
-                  <View style={styles.naverThumb}>
-                    <Text style={styles.naverThumbIcon}>📰</Text>
-                    <View style={styles.naverBadge}>
-                      <Text style={styles.naverBadgeText}>NAVER 뉴스</Text>
+                  <View style={[styles.naverThumb, { backgroundColor: typeInfo.color + '15' }]}>
+                    <Text style={styles.naverThumbIcon}>{typeInfo.icon}</Text>
+                    <View style={[styles.naverBadge, { backgroundColor: typeInfo.color }]}>
+                      <Text style={styles.naverBadgeText}>{typeInfo.label}</Text>
                     </View>
                   </View>
                 ) : (
-                  // 유튜브 썸네일
                   <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
                 )}
                 {watched[item.videoId] && (
@@ -223,9 +237,9 @@ export default function DestroyScreen({ route }) {
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>#{item.keyword}</Text>
                   </View>
-                  <View style={[styles.typeBadge, { backgroundColor: isNaver ? '#03c75a22' : '#ff000022' }]}>
-                    <Text style={[styles.typeBadgeText, { color: isNaver ? '#03c75a' : '#ff4444' }]}>
-                      {isNaver ? '📰 네이버' : '▶ YouTube'}
+                  <View style={[styles.typeBadge, { backgroundColor: typeInfo.color + '22' }]}>
+                    <Text style={[styles.typeBadgeText, { color: typeInfo.color }]}>
+                      {typeInfo.icon} {typeInfo.label}
                     </Text>
                   </View>
                 </View>
@@ -236,17 +250,24 @@ export default function DestroyScreen({ route }) {
                   <Text style={styles.newsDesc} numberOfLines={2}>{item.description}</Text>
                 )}
 
+                {item.bloggername ? (
+                  <Text style={styles.bloggerName}>✍️ {item.bloggername}</Text>
+                ) : null}
+
                 <View style={styles.cardFooter}>
                   <TouchableOpacity onPress={() => handleWatch(item)}>
-                    <Text style={[styles.watchText, { color: isNaver ? '#03c75a' : '#00f5c8' }]}>
-                      {isNaver ? '📰 네이버에서 보기' : '▶ 유튜브에서 보기'}
+                    <Text style={[styles.watchText, { color: isNaver ? typeInfo.color : '#00f5c8' }]}>
+                      {typeInfo.btnText}
                     </Text>
                   </TouchableOpacity>
-                  <View style={[styles.checkBtn, watched[item.videoId] && styles.checkBtnDone]}>
+                  <TouchableOpacity
+                    style={[styles.checkBtn, watched[item.videoId] && styles.checkBtnDone]}
+                    onPress={() => toggleWatched(item.videoId)}
+                  >
                     <Text style={styles.checkBtnText}>
                       {watched[item.videoId] ? '✅ 봤어요' : '👁 안봤어요'}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -312,20 +333,21 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#111118', borderRadius: 14, marginBottom: 16, borderWidth: 0.5, borderColor: 'rgba(0,245,200,.2)', overflow: 'hidden' },
   cardWatched: { opacity: 0.6, borderColor: 'rgba(0,245,200,.5)' },
   thumbnail: { width: '100%', height: 180 },
-  naverThumb: { width: '100%', height: 120, backgroundColor: '#03c75a15', alignItems: 'center', justifyContent: 'center', borderBottomWidth: 0.5, borderBottomColor: '#03c75a33' },
+  naverThumb: { width: '100%', height: 120, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 0.5, borderBottomColor: '#1a1a2e' },
   naverThumbIcon: { fontSize: 40, marginBottom: 8 },
-  naverBadge: { backgroundColor: '#03c75a', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 4 },
+  naverBadge: { borderRadius: 6, paddingHorizontal: 12, paddingVertical: 4 },
   naverBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   watchedOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   watchedOverlayText: { color: '#00f5c8', fontSize: 18, fontWeight: '700' },
   cardBody: { padding: 14 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   badge: { backgroundColor: 'rgba(255,60,172,.15)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 11, color: '#ff3cac', fontWeight: '600' },
   typeBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   typeBadgeText: { fontSize: 11, fontWeight: '600' },
   videoTitle: { fontSize: 14, color: '#fff', fontWeight: '600', lineHeight: 20, marginBottom: 6 },
-  newsDesc: { fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 8 },
+  newsDesc: { fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 6 },
+  bloggerName: { fontSize: 11, color: '#444', marginBottom: 8 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   watchText: { fontSize: 12 },
   checkBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 0.5, borderColor: '#333' },

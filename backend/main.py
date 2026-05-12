@@ -75,7 +75,7 @@ def load_data(user_id: str = "user_default"):
     if os.path.exists(file):
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"vectors": [], "history": [], "analyzed_texts": [], "used_keywords": [], "last_anti_keywords": []}
+    return {"vectors": [], "history": [], "analyzed_texts": [], "used_keywords": [], "last_anti_keywords": [], "last_source_type": "youtube"}
 
 def save_data(data, user_id: str = "user_default"):
     file = get_user_file(user_id)
@@ -84,6 +84,9 @@ def save_data(data, user_id: str = "user_default"):
 
 def is_naver_news(url):
     return 'news.naver.com' in url or 'n.news.naver.com' in url
+
+def is_naver_blog(url):
+    return 'blog.naver.com' in url or 'm.blog.naver.com' in url
 
 def is_youtube(url):
     return 'youtube.com' in url or 'youtu.be' in url
@@ -128,8 +131,7 @@ def get_page_text(url):
     except:
         return "분석 실패"
 
-def search_naver_news(keyword, display=1):
-    """네이버 뉴스 검색 API"""
+def search_naver(keyword, search_type='news', display=3):
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return []
     try:
@@ -142,29 +144,30 @@ def search_naver_news(keyword, display=1):
             'display': display,
             'sort': 'date',
         }
-        res = requests.get(
-            'https://openapi.naver.com/v1/search/news.json',
-            headers=headers,
-            params=params,
-            timeout=5
-        )
+        url = f'https://openapi.naver.com/v1/search/{search_type}.json'
+        res = requests.get(url, headers=headers, params=params, timeout=5)
         if res.status_code == 200:
             items = res.json().get('items', [])
             results = []
             for item in items:
-                # HTML 태그 제거
                 title = re.sub(r'<[^>]+>', '', item.get('title', ''))
                 description = re.sub(r'<[^>]+>', '', item.get('description', ''))
+                if search_type == 'blog':
+                    thumbnail = 'https://blogpfthumb-phinf.pstatic.net/MjAxOTEyMTlfMjQ1/MDAxNTc2NzM5NjMxNTMy.png'
+                    link = item.get('link', '')
+                else:
+                    thumbnail = 'https://ssl.pstatic.net/static/newsstand/2021/images/newsstand_logo_naver.png'
+                    link = item.get('link', '')
                 results.append({
                     'title': title,
                     'description': description,
-                    'url': item.get('link', ''),
-                    'thumbnail': 'https://ssl.pstatic.net/static/newsstand/2021/images/newsstand_logo_naver.png',
-                    'source': item.get('originallink', ''),
+                    'url': link,
+                    'thumbnail': thumbnail,
+                    'bloggername': item.get('bloggername', ''),
                 })
             return results
     except Exception as e:
-        print(f"네이버 뉴스 검색 오류: {e}")
+        print(f"네이버 {search_type} 검색 오류: {e}")
     return []
 
 def calculate_bias_score(vectors):
@@ -239,7 +242,6 @@ def root():
 
 @app.post("/analyze")
 def analyze(body: PostRequest):
-    # URL 타입 감지
     if is_youtube(body.url):
         text = get_youtube_text(body.url)
         if not text:
@@ -248,6 +250,9 @@ def analyze(body: PostRequest):
     elif is_naver_news(body.url):
         text = get_page_text(body.url)
         source_type = "naver_news"
+    elif is_naver_blog(body.url):
+        text = get_page_text(body.url)
+        source_type = "naver_blog"
     else:
         text = get_page_text(body.url)
         source_type = "web"
@@ -269,9 +274,7 @@ def analyze(body: PostRequest):
         "source_type": source_type
     })
 
-    # 마지막 분석 소스 타입 저장
     data["last_source_type"] = source_type
-
     score = calculate_bias_score(data["vectors"])
     data["history"].append(score)
     data["vectors"] = data["vectors"][-100:]
@@ -313,6 +316,8 @@ def select_categories(body: CategoryRequest):
     data["last_anti_keywords"] = new_keywords
     used_keywords.extend(new_keywords)
     data["used_keywords"] = used_keywords[-20:]
+    # 카테고리 선택은 항상 유튜브로 추천
+    data["last_source_type"] = "youtube"
     save_data(data, body.user_id)
     return {
         "status": "ok",
@@ -335,37 +340,55 @@ def get_anti_keywords(user_id: str, exclude: str = ""):
     save_data(data, user_id)
 
     results = []
+    all_keywords = selected + [kw for kw in KEYWORD_POOL if kw not in selected]
 
-    # 네이버 뉴스로 분석했으면 네이버 뉴스 추천
-    if source_type == "naver_news" and NAVER_CLIENT_ID:
+    if source_type == "naver_news":
         print("네이버 뉴스 추천 모드")
-        all_keywords = selected + [kw for kw in KEYWORD_POOL if kw not in selected]
         for keyword in all_keywords:
             if len(results) >= 5:
                 break
-            news_list = search_naver_news(keyword, display=3)
+            news_list = search_naver(keyword, search_type='news', display=3)
             for news in news_list:
                 if len(results) >= 5:
                     break
                 if news['url'] not in exclude_ids:
                     results.append({
                         "keyword": keyword,
-                        "videoId": news['url'],  # URL을 ID로 사용
+                        "videoId": news['url'],
                         "title": news['title'],
                         "thumbnail": news['thumbnail'],
                         "url": news['url'],
                         "type": "naver_news",
                         "description": news['description']
                     })
+
+    elif source_type == "naver_blog":
+        print("네이버 블로그 추천 모드")
+        for keyword in all_keywords:
+            if len(results) >= 5:
+                break
+            blog_list = search_naver(keyword, search_type='blog', display=3)
+            for blog in blog_list:
+                if len(results) >= 5:
+                    break
+                if blog['url'] not in exclude_ids:
+                    results.append({
+                        "keyword": keyword,
+                        "videoId": blog['url'],
+                        "title": blog['title'],
+                        "thumbnail": blog['thumbnail'],
+                        "url": blog['url'],
+                        "type": "naver_blog",
+                        "description": blog['description'],
+                        "bloggername": blog.get('bloggername', '')
+                    })
+
     else:
-        # 유튜브 추천
         print("유튜브 추천 모드")
         if not YOUTUBE_API_KEY:
             return {"error": "API Key missing"}
 
         youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-        all_keywords = selected + [kw for kw in KEYWORD_POOL if kw not in selected]
-
         for keyword in all_keywords:
             if len(results) >= 5:
                 break

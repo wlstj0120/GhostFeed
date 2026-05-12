@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://13.125.250.131:8000';
+const BASE_URL = 'http://13.125.207.208:8000';
 const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
 export const getUserId = async () => {
