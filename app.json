@@ -13,36 +13,13 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.ghostfeed.app",
-      "infoPlist": {
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "ghostfeed"
-            ]
-          }
-        ]
-      }
+      "bundleIdentifier": "com.ghostfeed.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0a0a0f"
       },
-      "intentFilters": [
-        {
-          "action": "android.intent.action.SEND",
-          "data": [
-            {
-              "mimeType": "text/plain"
-            }
-          ],
-          "category": [
-            "android.intent.category.DEFAULT",
-            "android.intent.category.BROWSABLE"
-          ]
-        }
-      ],
       "package": "com.ghostfeed.app",
       "usesCleartextTraffic": true
     },
@@ -50,13 +27,20 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"]
+        }
+      ]
     ],
     "scheme": "ghostfeed",
     "extra": {
       "eas": {
-        "projectId": "3a258b80-0a3e-49f8-a5de-8c8e41ed0dd4"
+        "projectId": "c9bd00fb-6ee4-40da-9158-b039f1582107"
       }
-    }
+    },
+    "owner": "wlstj01"
   }
 }
